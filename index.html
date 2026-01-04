@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ultimate Budget Tracker</title>
+  <style>
+    :root {
+      --bg: #f3f4f6;
+      --card: #ffffff;
+      --text: #111827;
+      --primary: #2563eb;
+      --danger: #dc2626;
+      --secondary: #6b7280;
+    }
+    body.dark {
+      --bg: #0f172a;
+      --card: #020617;
+      --text: #e5e7eb;
+    }
+    body {
+      font-family: Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 10px;
+      display: flex;
+      justify-content: center;
+    }
+    .card {
+      background: var(--card);
+      width: 100%;
+      max-width: 520px;
+      border-radius: 16px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+      padding: 16px;
+    }
+    h1, h2 { text-align: center; }
+    input, select, button {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 6px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+    }
+    button { background: var(--primary); color: white; border: none; font-weight: bold; }
+    button.secondary { background: var(--secondary); }
+    button.danger { background: var(--danger); }
+    button.small { padding: 6px; font-size: 12px; }
+    .row { display: flex; gap: 6px; }
+    .summary p { margin: 3px 0; font-size: 14px; }
+    .item {
+      display: grid;
+      grid-template-columns: 1fr auto auto auto;
+      gap: 6px;
+      align-items: center;
+      background: #e5e7eb33;
+      padding: 8px;
+      border-radius: 8px;
+      margin-top: 6px;
+      font-size: 13px;
+    }
+    canvas { width: 100%; max-height: 200px; }
+    .warning { color: var(--danger); font-weight: bold; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Ultimate Budget Tracker</h1>
+
+    <div class="row">
+      <input id="name" placeholder="Description" />
+      <input id="amount" type="number" placeholder="Amount" />
+    </div>
+
+    <div class="row">
+      <select id="category">
+        <option>Food</option><option>Transport</option><option>Bills</option>
+        <option>Entertainment</option><option>Shopping</option><option>Other</option>
+      </select>
+      <select id="type">
+        <option value="expense">Expense</option>
+        <option value="income">Income</option>
+      </select>
+    </div>
+
+    <button onclick="addItem()">Add Transaction</button>
+
+    <h2>Controls</h2>
+    <input id="search" placeholder="Search transactions" oninput="render()" />
+    <select id="monthFilter" onchange="render()">
+      <option value="all">All months</option>
+    </select>
+
+    <div class="row">
+      <input id="monthlyBudget" type="number" placeholder="Monthly budget" />
+      <button class="secondary small" onclick="saveBudget()">Save</button>
+    </div>
+
+    <div class="row">
+      <button class="secondary small" onclick="toggleDark()">🌙 Dark Mode</button>
+      <button class="secondary small" onclick="exportCSV()">⬇ Export CSV</button>
+      <button class="danger small" onclick="resetAll()">Reset</button>
+    </div>
+
+    <div class="summary">
+      <p>Income: <strong id="income">0</strong></p>
+      <p>Expenses: <strong id="expenses">0</strong></p>
+      <p>Balance: <strong id="balance">0</strong></p>
+      <p>Budget Left: <strong id="budgetLeft">0</strong></p>
+      <p id="warning" class="warning"></p>
+    </div>
+
+    <h2>Transactions</h2>
+    <div id="list"></div>
+
+    <h2>Spending Chart</h2>
+    <canvas id="chart" height="200"></canvas>
+  </div>
+
+<script>
+let items = JSON.parse(localStorage.getItem('items')) || [];
+let monthlyBudget = Number(localStorage.getItem('budget')) || 0;
+let dark = localStorage.getItem('dark') === 'true';
+
+if (dark) document.body.classList.add('dark');
+
+document.getElementById('monthlyBudget').value = monthlyBudget || '';
+
+function save() {
+  localStorage.setItem('items', JSON.stringify(items));
+}
+
+function saveBudget() {
+  monthlyBudget = Number(monthlyBudgetInput.value);
+  localStorage.setItem('budget', monthlyBudget);
+  render();
+}
+
+function addItem() {
+  if (!name.value || !amount.value) return;
+  items.push({
+    name: name.value,
+    amount: Number(amount.value),
+    type: type.value,
+    category: category.value,
+    date: new Date().toISOString()
+  });
+  name.value = amount.value = '';
+  save(); render();
+}
+
+function deleteItem(i) {
+  items.splice(i, 1); save(); render();
+}
+
+function toggleDark() {
+  document.body.classList.toggle('dark');
+  localStorage.setItem('dark', document.body.classList.contains('dark'));
+}
+
+function resetAll() {
+  if (!confirm('Delete all data?')) return;
+  items = []; save(); render();
+}
+
+function exportCSV() {
+  let csv = 'Name,Amount,Type,Category,Date\n';
+  items.forEach(i => csv += `${i.name},${i.amount},${i.type},${i.category},${i.date}\n`);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'budget.csv'; a.click();
+}
+
+function render() {
+  list.innerHTML = '';
+  let income = 0, expenses = 0;
+  let totals = {};
+  const q = search.value.toLowerCase();
+
+  items.filter(i => i.name.toLowerCase().includes(q)).forEach((item, i) => {
+    if (item.type === 'income') income += item.amount;
+    else {
+      expenses += item.amount;
+      totals[item.category] = (totals[item.category] || 0) + item.amount;
+    }
+
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.innerHTML = `<span>${item.name} (${item.category})</span>
+      <span>${item.type === 'expense' ? '-' : '+'}${item.amount}</span>
+      <span>${new Date(item.date).toLocaleDateString()}</span>
+      <button class="danger small" onclick="deleteItem(${i})">X</button>`;
+    list.appendChild(div);
+  });
+
+  incomeEl.textContent = income;
+  expensesEl.textContent = expenses;
+  balanceEl.textContent = income - expenses;
+  budgetLeft.textContent = monthlyBudget - expenses;
+
+  warning.textContent = monthlyBudget && expenses > monthlyBudget ? '⚠ Budget exceeded!' : '';
+  drawChart(totals);
+}
+
+function drawChart(data) {
+  const ctx = chart.getContext('2d');
+  ctx.clearRect(0,0,chart.width,chart.height);
+  const keys = Object.keys(data);
+  const max = Math.max(...Object.values(data),1);
+  const w = chart.width / keys.length;
+  keys.forEach((k,i)=>{
+    const h = (data[k]/max)*(chart.height-20);
+    ctx.fillRect(i*w+10, chart.height-h, w-20, h);
+    ctx.fillText(k, i*w+10, chart.height-5);
+  });
+}
+
+render();
+</script>
+</body>
+</html>
